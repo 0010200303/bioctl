@@ -7,27 +7,18 @@ use crate::db::file_repo;
 use crate::domain::file::File;
 use crate::utils::time;
 
-pub fn collect_canonical_path(path: &str) -> Result<String> {
-    let p = Path::new(path);
-    if p.exists() == false {
-        return Err(Error::new(ErrorKind::NotFound, "Path does not exist").into());
-    }
-    if p.is_file() == false {
-        return Err(Error::new(ErrorKind::InvalidInput, "Path is not a file").into());
-    }
-
-    let canonical = p.canonicalize()?;
-    let canonical_str = canonical.to_string_lossy().into_owned();
-    Ok(canonical_str)
-}
-
 pub fn collect_canonical_paths(path: &str, recursive: bool) -> Result<Vec<String>> {
     let p = Path::new(path);
     if p.exists() == false {
         return Err(Error::new(ErrorKind::NotFound, "Path does not exist").into());
     }
-    if p.is_dir() == false {
-        return Err(Error::new(ErrorKind::NotADirectory, "Path is not a diretory").into());
+    if p.is_file() {
+        let p = Path::new(path);
+        let canonical = p.canonicalize()?;
+        return Ok(vec![canonical.to_string_lossy().into_owned()]);
+    }
+    else if p.is_dir() == false {
+        return Err(Error::new(ErrorKind::InvalidInput, "Path is not a diretory or a file").into());
     }
 
     let mut paths = Vec::new();

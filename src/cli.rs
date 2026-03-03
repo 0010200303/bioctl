@@ -24,13 +24,8 @@ pub enum Commands {
 
 
 
-    TrackFile {
-        path: String,
-        #[arg(short, long, num_args = 1..)]
-        groups: Option<Vec<i64>>,
-    },
     TrackFiles {
-        path: String,
+        paths: Vec<String>,
         #[arg(short, long, num_args = 1..)]
         groups: Option<Vec<i64>>,
 
@@ -139,66 +134,28 @@ pub fn run(cli: Cli, connection: &mut Connection, config: &Config) -> Result<()>
 
 
 
-        Commands::TrackFile { path, groups } => {
-            let canonical_path = match file_service::collect_canonical_path(&path) {
-                Ok(p) => p,
-                Err(e) => {
-                    if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
-                        match io_error.kind() {
-                            std::io::ErrorKind::NotFound => {
-                                return Err(anyhow!("{color_red}Path '{}' does not exist{color_reset}", path));
+        Commands::TrackFiles { paths, groups, recursive } => {
+            let mut canonical_paths: Vec<String> = Vec::new();
+            for path in &paths {
+                let mut found = match file_service::collect_canonical_paths(&path, recursive) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
+                            match io_error.kind() {
+                                std::io::ErrorKind::NotFound => {
+                                    return Err(anyhow!("{color_red}Path '{}' does not exist{color_reset}", path));
+                                }
+                                std::io::ErrorKind::InvalidInput => {
+                                    return Err(anyhow!("{color_red}Path '{}' is not a directory or a file{color_reset}", path));
+                                }
+                                _ => {}
                             }
-                            std::io::ErrorKind::InvalidInput => {
-                                return Err(anyhow!("{color_red}Path '{}' is not a file{color_reset}", path));
-                            }
-                            _ => {}
                         }
+                        return Err(e);
                     }
-                    return Err(e);
-                }
-            };
-
-            let file_id = match file_service::track_file(&connection, &canonical_path)? {
-                Some(id) => {
-                    println!("{color_green}File is now tracked with id {}{color_reset}", id);
-                    id
-                }
-                None => {
-                    let id = file_service::find_file_by_path(&connection, &path)?
-                        .ok_or_else(|| anyhow!("{color_red}File could not be tracked{color_reset}"))?.id;
-
-                    println!("{color_green}File is already being tracked with id {}{color_reset}", id);
-                    id
-                }
-            };
-
-            if let Some(group_list) = groups {
-                for group_id in group_list {
-                    let group = get_group(&connection, group_id)?;
-
-                    group_service::add_file(&connection, group_id, file_id)?;
-                    println!("{color_green}Added file ({}) to group '{}'{color_reset}", canonical_path, group.name);
-                }
+                };
+                canonical_paths.append(&mut found);
             }
-        }
-        Commands::TrackFiles { path, groups, recursive } => {
-            let canonical_paths = match file_service::collect_canonical_paths(&path, recursive) {
-                Ok(p) => p,
-                Err(e) => {
-                    if let Some(io_error) = e.downcast_ref::<std::io::Error>() {
-                        match io_error.kind() {
-                            std::io::ErrorKind::NotFound => {
-                                return Err(anyhow!("{color_red}Path '{}' does not exist{color_reset}", path));
-                            }
-                            std::io::ErrorKind::NotADirectory => {
-                                return Err(anyhow!("{color_red}Path '{}' is not a directory{color_reset}", path));
-                            }
-                            _ => {}
-                        }
-                    }
-                    return Err(e);
-                }
-            };
 
             let mut file_ids = file_service::track_files(connection, &canonical_paths)?;
             for file_id in &file_ids {
